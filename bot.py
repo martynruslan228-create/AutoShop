@@ -4,7 +4,6 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InputMedi
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
 from telegram.constants import ParseMode
 
-# Логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -12,11 +11,10 @@ TOKEN = "8076199435:AAEun5vwRl7f89vFZ1E5fJ5C1H4CDe7LLtw"
 CHANNEL_ID = "@autochopOdessa"
 DB_PATH = "ads.db"
 
-# Состояния
 (MAKE, MODEL, YEAR, GEARBOX, FUEL, DRIVE, DISTRICT, TOWN, PRICE, 
  DESCRIPTION, PHOTOS, PHONE, SHOW_CONTACT, CONFIRM, EDIT_PRICE) = range(15)
 
-# --- База данных ---
+# --- Инициализация БД ---
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute('CREATE TABLE IF NOT EXISTS ads (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, details TEXT, msg_id INTEGER)')
@@ -42,7 +40,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ConversationHandler.END
 
-# --- Создание объявления ---
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     context.user_data['photos'] = []
@@ -87,28 +84,36 @@ async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['description'] = update.message.text
-    await update.message.reply_text("Надішліть фото (до 10 шт) і натисніть /done:", 
-                                   reply_markup=ReplyKeyboardMarkup([["➡️ Без фото"]], resize_keyboard=True)); return PHOTOS
+    await update.message.reply_text(
+        "Надішліть фото (до 10 шт) та натисніть /done:", 
+        reply_markup=ReplyKeyboardMarkup([["➡️ Без фото"]], resize_keyboard=True)
+    )
+    return PHOTOS
 
 async def get_photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.photo: 
+    if update.message.photo:
         context.user_data['photos'].append(update.message.photo[-1].file_id)
     return PHOTOS
 
 async def done_photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Ваш номер телефону:", reply_markup=ReplyKeyboardRemove()); return PHONE
+    await update.message.reply_text("Ваш номер телефону:", reply_markup=ReplyKeyboardRemove())
+    return PHONE
 
 async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['phone'] = update.message.text
-    await update.message.reply_text("Показувати ваш TG?", reply_markup=ReplyKeyboardMarkup([["Так", "Ні"]], resize_keyboard=True)); return SHOW_CONTACT
+    await update.message.reply_text("Показувати ваш TG?", reply_markup=ReplyKeyboardMarkup([["Так", "Ні"]], resize_keyboard=True))
+    return SHOW_CONTACT
 
 async def get_tg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['show_tg'] = update.message.text
     context.user_data['username'] = update.effective_user.username
     res = generate_summary(context.user_data)
     context.user_data['summary'] = res
-    await update.message.reply_text(f"ПЕРЕВІРКА:\n\n{res}\n\nПублікуємо?", 
-                                   reply_markup=ReplyKeyboardMarkup([["✅ Так", "❌ Ні"]], resize_keyboard=True), parse_mode=ParseMode.HTML)
+    await update.message.reply_text(
+        f"ПЕРЕВІРКА:\n\n{res}\n\nПублікуємо?", 
+        reply_markup=ReplyKeyboardMarkup([["✅ Так", "❌ Ні"]], resize_keyboard=True),
+        parse_mode=ParseMode.HTML
+    )
     return CONFIRM
 
 async def final_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -123,27 +128,31 @@ async def final_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 sent_msg = await context.bot.send_photo(CHANNEL_ID, ps[0], caption=cap, parse_mode=ParseMode.HTML)
             else:
                 media = [InputMediaPhoto(ps[0], caption=cap, parse_mode=ParseMode.HTML)]
-                for p in ps[1:10]: media.append(InputMediaPhoto(p))
+                for p in ps[1:10]:
+                    media.append(InputMediaPhoto(p))
                 msgs = await context.bot.send_media_group(CHANNEL_ID, media)
                 sent_msg = msgs[0]
-            
+
             conn = sqlite3.connect(DB_PATH)
-            conn.execute('INSERT INTO ads (user_id, details, msg_id) VALUES (?, ?, ?)', (update.effective_user.id, cap, sent_msg.message_id))
+            conn.execute(
+                'INSERT INTO ads (user_id, details, msg_id) VALUES (?, ?, ?)',
+                (update.effective_user.id, cap, sent_msg.message_id)
+            )
             conn.commit(); conn.close()
-            await update.message.reply_text("✅ Опубліковано!", reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"]], resize_keyboard=True))
+            await update.message.reply_text(
+                "✅ Опубліковано!", reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"]], resize_keyboard=True)
+            )
         except Exception as e:
             await update.message.reply_text(f"❌ Помилка: {e}")
     return ConversationHandler.END
 
-# --- Мои объявления ---
 async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conn = sqlite3.connect(DB_PATH); cursor = conn.cursor()
     cursor.execute('SELECT id, details, msg_id FROM ads WHERE user_id = ? ORDER BY id DESC', (user_id,))
     rows = cursor.fetchall(); conn.close()
     if not rows:
-        await update.message.reply_text("У вас немає активних оголошень.")
-        return
+        await update.message.reply_text("У вас немає активних оголошень."); return
     for r in rows:
         kb = [[InlineKeyboardButton("💰 Змінити ціну", callback_data=f"editprice_{r[0]}")],
               [InlineKeyboardButton("🗑 Видалити всюди", callback_data=f"del_{r[0]}_{r[2]}")]]
@@ -176,11 +185,10 @@ async def save_new_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ Ціну оновлено!")
     conn.close(); return ConversationHandler.END
 
-# --- Web сервер для Render ---
+# --- HealthCheck для Render ---
 class HealthCheck(BaseHTTPRequestHandler):
     def do_GET(self): self.send_response(200); self.end_headers(); self.wfile.write(b"OK")
 
-# --- Запуск ---
 async def main():
     init_db()
     threading.Thread(target=lambda: HTTPServer(('0.0.0.0', int(os.environ.get("PORT", 8080))), HealthCheck).serve_forever(), daemon=True).start()
@@ -214,8 +222,8 @@ async def main():
     app.add_handler(CallbackQueryHandler(handle_callbacks))
     app.add_handler(conv)
     
-    # ✅ Запуск polling без лишних инициализаций
-    await app.run_polling(drop_pending_updates=True)
+    # Запуск бота с polling
+    await app.run_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
