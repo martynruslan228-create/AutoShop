@@ -1,6 +1,6 @@
 import os, asyncio, logging, threading, sqlite3
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 
 logging.basicConfig(level=logging.INFO)
@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 TOKEN = "8076199435:AAGSWx8kZnZTno2R-_7bxiIcMwHksWGtiyI"
 CHANNEL_ID = "@autochopOdessa"
 
-# Стани анкети
-BRAND, MODEL, YEAR, PRICE, DESC, PHOTO, CONTACT, EDIT_PRICE = range(8)
+# Состояния анкеты
+BRAND, MODEL, YEAR, REGION, CITY, GEARBOX, DRIVE, FUEL, PRICE, DESC, PHOTO, CONTACT, EDIT_PRICE = range(13)
 
 def init_db():
     conn = sqlite3.connect("ads.db")
@@ -26,12 +26,13 @@ init_db()
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [["➕ Нове оголошення"], ["🗂 Мої оголошення"]]
     await update.message.reply_text(
-        "🚗 Вітаємо в Auto Shop Odessa!\nОберіть дію:",
-        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True)
+        f"🚗 Вітаємо в Auto Shop Odessa!\nНаш канал: {CHANNEL_ID}\n\nОберіть дію:",
+        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
+        disable_web_page_preview=True
     )
     return ConversationHandler.END
 
-# --- АНКЕТА ---
+# --- НАЧАЛО АНКЕТЫ ---
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Введіть марку авто:", reply_markup=ReplyKeyboardMarkup([["❌ Скасувати"]], resize_keyboard=True))
     return BRAND
@@ -49,6 +50,35 @@ async def get_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_year(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['year'] = update.message.text
+    regions = [["Одеська", "Київська"], ["Львівська", "Дніпропетровська"], ["Інша область"]]
+    await update.message.reply_text("Оберіть область:", reply_markup=ReplyKeyboardMarkup(regions, resize_keyboard=True))
+    return REGION
+
+async def get_region(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['region'] = update.message.text
+    await update.message.reply_text("Введіть населений пункт:")
+    return CITY
+
+async def get_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['city'] = update.message.text
+    kb = [["Автомат", "Механіка"]]
+    await update.message.reply_text("Тип КПП:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    return GEARBOX
+
+async def get_gearbox(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['gearbox'] = update.message.text
+    kb = [["Передній", "Задній", "Повний"]]
+    await update.message.reply_text("Привід:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    return DRIVE
+
+async def get_drive(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['drive'] = update.message.text
+    kb = [["Бензин", "Дизель"], ["Газ/Бензин", "Електро"]]
+    await update.message.reply_text("Тип палива:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    return FUEL
+
+async def get_fuel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['fuel'] = update.message.text
     await update.message.reply_text("Введіть ціну ($):")
     return PRICE
 
@@ -60,28 +90,28 @@ async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['desc'] = update.message.text
     kb = [["⏩ Пропустити фото"]]
-    await update.message.reply_text("Надішліть фото або натисніть пропустити:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    await update.message.reply_text("Надішліть фото або пропустіть:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
     return PHOTO
 
 async def get_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.photo:
-        context.user_data['photo_id'] = update.message.photo[-1].file_id
-    else:
-        context.user_data['photo_id'] = None
-    
+    context.user_data['photo_id'] = update.message.photo[-1].file_id if update.message.photo else None
     kb = [["✅ Так, додати", "❌ Ні, анонімно"]]
-    await update.message.reply_text("Додати посилання на ваш Telegram у пост?", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    await update.message.reply_text("Додати ваш контакт у пост?", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
     return CONTACT
 
 async def finish_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ud = context.user_data
+    contact = f"@{user.username}" if update.message.text == "✅ Так, додати" and user.username else "Приватна особа"
     
-    contact_info = f"@{user.username}" if update.message.text == "✅ Так, додати" and user.username else "користувач"
-    caption = (f"🚗 {ud['brand']} {ud['model']} {ud['year']}\n"
-               f"💰 Ціна: {ud['price']}$\n"
-               f"📝 Опис: {ud['desc']}\n\n"
-               f"👤 Продавець: {contact_info}")
+    caption = (
+        f"🚗 {ud['brand']} {ud['model']} ({ud['year']})\n"
+        f"📍 {ud['region']} обл., {ud['city']}\n"
+        f"⚙️ {ud['gearbox']} | {ud['drive']} | {ud['fuel']}\n"
+        f"💰 Ціна: {ud['price']}$\n"
+        f"📝 Опис: {ud['desc']}\n\n"
+        f"👤 Контакт: {contact}"
+    )
 
     try:
         if ud['photo_id']:
@@ -97,11 +127,11 @@ async def finish_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         await update.message.reply_text("✅ Опубліковано!")
     except Exception as e:
-        await update.message.reply_text(f"Помилка публікації: {e}")
+        await update.message.reply_text(f"Помилка: {e}")
 
     return await start(update, context)
 
-# --- УПРАВЛІННЯ ---
+# --- УПРАВЛЕНИЕ ОБЪЯВЛЕНИЯМИ (МОИ ОБЪЯВЛЕНИЯ) ---
 async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conn = sqlite3.connect("ads.db")
@@ -139,7 +169,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.commit()
         conn.close()
         await query.edit_message_text("🗑 Видалено.")
-
     elif data.startswith("edit_"):
         context.user_data['edit_ad_id'] = data.split("_")[1]
         await query.message.reply_text("Введіть нову ціну ($):")
@@ -155,11 +184,9 @@ async def save_new_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if res:
         msg_id, old_text, photo_id = res
-        # Логіка заміни ціни в тексті
         lines = old_text.split('\n')
         for i, line in enumerate(lines):
-            if "💰 Ціна:" in line:
-                lines[i] = f"💰 Ціна: {new_price}$"
+            if "💰 Ціна:" in line: lines[i] = f"💰 Ціна: {new_price}$"
         new_text = '\n'.join(lines)
         
         try:
@@ -189,6 +216,11 @@ async def main():
             BRAND: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_brand)],
             MODEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_model)],
             YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_year)],
+            REGION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_region)],
+            CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_city)],
+            GEARBOX: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_gearbox)],
+            DRIVE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_drive)],
+            FUEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_fuel)],
             PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_price)],
             DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_desc)],
             PHOTO: [MessageHandler(filters.PHOTO | filters.Regex("^⏩ Пропустити фото$"), get_photo)],
