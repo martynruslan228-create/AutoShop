@@ -4,18 +4,16 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InputMedi
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
 from telegram.constants import ParseMode
 
-# Логирование для отслеживания работы на Render
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = "8076199435:AAEun5vwRl7f89vFZ1E5fJ5C1H4CDe7LLtw"
 CHANNEL_ID = "@autochopOdessa"
 DB_PATH = "ads.db"
 
-# Состояния
-(MAKE, MODEL, YEAR, GEARBOX, FUEL, DRIVE, DISTRICT, TOWN, PRICE, 
- DESCRIPTION, PHOTOS, PHONE, SHOW_CONTACT, CONFIRM, EDIT_PRICE) = range(15)
+(MAKE, MODEL, YEAR, GEARBOX, FUEL, DRIVE, DISTRICT, TOWN, PRICE, DESCRIPTION,
+ PHOTOS, PHONE, SHOW_CONTACT, CONFIRM, EDIT_PRICE) = range(15)
 
-# --- Инициализация БД ---
+# --- БАЗА ДАННЫХ ---
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute('CREATE TABLE IF NOT EXISTS ads (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, details TEXT, msg_id INTEGER)')
@@ -33,12 +31,12 @@ def generate_summary(data):
             f"📝 <b>Опис:</b> {data['description']}\n\n"
             f"📞 Тел: <code>{data['phone']}</code>\n👤 TG: {tg_status}")
 
-# --- ФУНКЦИИ ОБРАБОТКИ (ПОРЯДОК ИСПРАВЛЕН) ---
-
+# --- ОБРАБОТЧИКИ ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚗 Вітаємо в Auto Shop Odessa!", 
-        reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"], ["🗂 Мої оголошення"]], resize_keyboard=True))
-    return ConversationHandler.END
+    await update.message.reply_text(
+        "🚗 Вітаємо в Auto Shop Odessa!",
+        reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"], ["🗂 Мої оголошення"]], resize_keyboard=True)
+    )
 
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -84,7 +82,7 @@ async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['description'] = update.message.text
-    await update.message.reply_text("Надішліть фото (до 10 шт) и натисніть /done:", 
+    await update.message.reply_text("Надішліть фото (до 10 шт) і натисніть /done:", 
                                    reply_markup=ReplyKeyboardMarkup([["➡️ Без фото"]], resize_keyboard=True)); return PHOTOS
 
 async def get_photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -122,13 +120,14 @@ async def final_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for p in ps[1:10]: media.append(InputMediaPhoto(p))
                 msgs = await context.bot.send_media_group(CHANNEL_ID, media)
                 sent_msg = msgs[0]
-            
+
             conn = sqlite3.connect(DB_PATH)
-            conn.execute('INSERT INTO ads (user_id, details, msg_id) VALUES (?, ?, ?)', (update.effective_user.id, cap, sent_msg.message_id))
+            conn.execute('INSERT INTO ads (user_id, details, msg_id) VALUES (?, ?, ?)',
+                         (update.effective_user.id, cap, sent_msg.message_id))
             conn.commit(); conn.close()
             await update.message.reply_text("✅ Опубліковано!", reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"]], resize_keyboard=True))
         except:
-            await update.message.reply_text("❌ Помилка прав.")
+            await update.message.reply_text("❌ Помилка при публікації")
     return ConversationHandler.END
 
 async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -171,16 +170,24 @@ async def save_new_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ Ціну оновлено!")
     conn.close(); return ConversationHandler.END
 
-# --- ЗАПУСК ---
+# --- WEB ---
 class HealthCheck(BaseHTTPRequestHandler):
-    def do_GET(self): self.send_response(200); self.end_headers(); self.wfile.write(b"OK")
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
 
+# --- ЗАПУСК ---
 async def main():
     init_db()
-    threading.Thread(target=lambda: HTTPServer(('0.0.0.0', int(os.environ.get("PORT", 8080))), HealthCheck).serve_forever(), daemon=True).start()
-    
+    threading.Thread(
+        target=lambda: HTTPServer(('0.0.0.0', int(os.environ.get("PORT", 8080))), HealthCheck).serve_forever(),
+        daemon=True
+    ).start()
+
     app = ApplicationBuilder().token(TOKEN).build()
-    
+
+    # --- HANDLERS ---
     conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^➕ Нове оголошення$"), new_ad)],
         states={
@@ -194,7 +201,8 @@ async def main():
             TOWN: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_town)],
             PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_price)],
             DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_desc)],
-            PHOTOS: [MessageHandler(filters.PHOTO, get_photos), CommandHandler('done', done_photos), MessageHandler(filters.Regex("^➡️ Без фото$"), done_photos)],
+            PHOTOS: [MessageHandler(filters.PHOTO, get_photos), CommandHandler('done', done_photos),
+                     MessageHandler(filters.Regex("^➡️ Без фото$"), done_photos)],
             PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
             SHOW_CONTACT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_tg)],
             CONFIRM: [MessageHandler(filters.Regex("^(✅ Так|❌ Ні)$"), final_post)],
@@ -202,17 +210,16 @@ async def main():
         },
         fallbacks=[CommandHandler('start', start)]
     )
-    
-    app.add_handler(CommandHandler('start', start))
+
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Regex("^🗂 Мої оголошення$"), my_ads))
     app.add_handler(CallbackQueryHandler(handle_callbacks))
     app.add_handler(conv)
-    
+
+    # --- ПРАВИЛЬНЫЙ ПОЛЛИНГ ---
     await app.initialize()
-    await app.bot.delete_webhook(drop_pending_updates=True) # Сброс старых команд
-    await app.updater.start_polling()
-    await asyncio.Event().wait()
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    await app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
- 
