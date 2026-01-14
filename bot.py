@@ -27,6 +27,7 @@ def generate_summary(data):
             f"📝 <b>Опис:</b> {data['description']}\n\n📞 Тел: <code>{data['phone']}</code>\n👤 TG: {tg}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logging.info("Команда /start получена")
     await update.message.reply_text("🚗 Вітаємо в Auto Shop Odessa!", 
         reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"], ["🗂 Мої оголошення"]], resize_keyboard=True))
     return ConversationHandler.END
@@ -83,7 +84,7 @@ async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['description'] = update.message.text
-    await update.message.reply_text("Фото (скинь до 10 шт и натисни /done):", 
+    await update.message.reply_text("Фото (до 10 шт) і натисни /done:", 
                                    reply_markup=ReplyKeyboardMarkup([["➡️ Без фото"]], resize_keyboard=True)); return PHOTOS
 
 async def get_photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -116,7 +117,7 @@ async def final_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.commit(); conn.close()
             await update.message.reply_text("✅ Опубліковано!", reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"]], resize_keyboard=True))
         except:
-            await update.message.reply_text("❌ Помилка! Додайте бота в адміни каналу.")
+            await update.message.reply_text("❌ Помилка! Перевірте права адміна в каналі.")
     return ConversationHandler.END
 
 class H(BaseHTTPRequestHandler):
@@ -160,4 +161,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
+                   
