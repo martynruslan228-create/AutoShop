@@ -4,7 +4,7 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InputMedi
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
 from telegram.constants import ParseMode
 
-# Логирование
+# Логирование для отслеживания работы на Render
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = "8076199435:AAEun5vwRl7f89vFZ1E5fJ5C1H4CDe7LLtw"
@@ -27,64 +27,32 @@ def generate_summary(data):
     return (f"🚘 <b>{data['make']} {data['model']}</b>\n"
             f"📅 Рік: {data['year']}\n"
             f"⚙️ КПП: {data['gearbox']} | ⛽️ {data['fuel']}\n"
+            f"🛣 Привід: {data['drive']}\n"
             f"📍 {data['district']} р-н, {data['town']}\n"
             f"💰 <b>Ціна: {data['price']}$</b>\n\n"
             f"📝 <b>Опис:</b> {data['description']}\n\n"
             f"📞 Тел: <code>{data['phone']}</code>\n👤 TG: {tg_status}")
 
-# --- ФУНКЦИИ ОБРАБОТКИ (ВАЖЕН ПОРЯДОК) ---
+# --- ФУНКЦИИ ОБРАБОТКИ (ПОРЯДОК ИСПРАВЛЕН) ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🚗 Вітаємо в Auto Shop Odessa!", 
         reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"], ["🗂 Мої оголошення"]], resize_keyboard=True))
     return ConversationHandler.END
 
-async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    conn = sqlite3.connect(DB_PATH); cursor = conn.cursor()
-    cursor.execute('SELECT id, details, msg_id FROM ads WHERE user_id = ? ORDER BY id DESC', (user_id,))
-    rows = cursor.fetchall(); conn.close()
-    if not rows:
-        await update.message.reply_text("У вас немає активних оголошень.")
-        return
-    for r in rows:
-        kb = [[InlineKeyboardButton("💰 Змінити ціну", callback_data=f"editprice_{r[0]}")],
-              [InlineKeyboardButton("🗑 Видалити", callback_data=f"del_{r[0]}_{r[2]}")]]
-        await update.message.reply_text(f"Ваше оголошення:\n\n{r[1]}", parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
-
-async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query; data = query.data.split("_"); action = data[0]; db_id = data[1]
-    if action == "del":
-        try: await context.bot.delete_message(CHANNEL_ID, int(data[2]))
-        except: pass
-        conn = sqlite3.connect(DB_PATH); conn.execute('DELETE FROM ads WHERE id = ?', (db_id,)); conn.commit(); conn.close()
-        await query.edit_message_text("🗑 Видалено всюди.")
-    elif action == "editprice":
-        context.user_data['edit_db_id'] = db_id
-        await query.message.reply_text("Введіть НОВУ ціну ($):")
-        return EDIT_PRICE
-
-async def save_new_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    new_price = update.message.text; db_id = context.user_data['edit_db_id']
-    conn = sqlite3.connect(DB_PATH); cursor = conn.cursor(); cursor.execute('SELECT details, msg_id FROM ads WHERE id = ?', (db_id,)); res = cursor.fetchone()
-    if res:
-        old_text = res[0]; msg_id = res[1]
-        new_text = old_text.split("Ціна:")[0] + f"Ціна: {new_price}$</b>" + old_text.split("$</b>")[1]
-        cursor.execute('UPDATE ads SET details = ? WHERE id = ?', (new_text, db_id)); conn.commit()
-        try: await context.bot.edit_message_caption(chat_id=CHANNEL_ID, message_id=msg_id, caption=new_text, parse_mode=ParseMode.HTML)
-        except: await context.bot.edit_message_text(chat_id=CHANNEL_ID, message_id=msg_id, text=new_text, parse_mode=ParseMode.HTML)
-        await update.message.reply_text("✅ Ціну оновлено!")
-    conn.close(); return ConversationHandler.END
-
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear(); context.user_data['photos'] = []
-    await update.message.reply_text("Марка авто:", reply_markup=ReplyKeyboardRemove()); return MAKE
+    context.user_data.clear()
+    context.user_data['photos'] = []
+    await update.message.reply_text("Введіть марку авто:", reply_markup=ReplyKeyboardRemove())
+    return MAKE
 
 async def get_make(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['make'] = update.message.text; await update.message.reply_text("Модель:"); return MODEL
+    context.user_data['make'] = update.message.text
+    await update.message.reply_text("Введіть модель:"); return MODEL
 
 async def get_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['model'] = update.message.text; await update.message.reply_text("Рік:"); return YEAR
+    context.user_data['model'] = update.message.text
+    await update.message.reply_text("Введіть рік:"); return YEAR
 
 async def get_year(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['year'] = update.message.text
@@ -99,50 +67,109 @@ async def get_fuel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привід:", reply_markup=ReplyKeyboardMarkup([["Передній", "Задній", "Повний"]], resize_keyboard=True)); return DRIVE
 
 async def get_drive(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['drive'] = update.message.text; await update.message.reply_text("Район Одеси:"); return DISTRICT
+    context.user_data['drive'] = update.message.text
+    await update.message.reply_text("Район Одеси:"); return DISTRICT
 
 async def get_district(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['district'] = update.message.text; await update.message.reply_text("Місто:"); return TOWN
+    context.user_data['district'] = update.message.text
+    await update.message.reply_text("Місто:"); return TOWN
 
 async def get_town(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['town'] = update.message.text; await update.message.reply_text("Ціна ($):"); return PRICE
+    context.user_data['town'] = update.message.text
+    await update.message.reply_text("Ціна ($):"); return PRICE
 
 async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['price'] = update.message.text; await update.message.reply_text("Опис:"); return DESCRIPTION
+    context.user_data['price'] = update.message.text
+    await update.message.reply_text("Опис авто:"); return DESCRIPTION
 
 async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['description'] = update.message.text
-    await update.message.reply_text("Фото (до 10) + /done:", reply_markup=ReplyKeyboardMarkup([["➡️ Без фото"]], resize_keyboard=True)); return PHOTOS
+    await update.message.reply_text("Надішліть фото (до 10 шт) и натисніть /done:", 
+                                   reply_markup=ReplyKeyboardMarkup([["➡️ Без фото"]], resize_keyboard=True)); return PHOTOS
 
 async def get_photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.photo: context.user_data['photos'].append(update.message.photo[-1].file_id)
     return PHOTOS
 
 async def done_photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Телефон:", reply_markup=ReplyKeyboardRemove()); return PHONE
+    await update.message.reply_text("Ваш номер телефону:", reply_markup=ReplyKeyboardRemove()); return PHONE
 
 async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['phone'] = update.message.text
-    await update.message.reply_text("Показати TG?", reply_markup=ReplyKeyboardMarkup([["Так", "Ні"]], resize_keyboard=True)); return SHOW_CONTACT
+    await update.message.reply_text("Показувати ваш TG?", reply_markup=ReplyKeyboardMarkup([["Так", "Ні"]], resize_keyboard=True)); return SHOW_CONTACT
 
 async def get_tg(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['show_tg'] = update.message.text; context.user_data['username'] = update.effective_user.username
-    res = generate_summary(context.user_data); context.user_data['summary'] = res
-    await update.message.reply_text(f"{res}\n\nПублікуємо?", reply_markup=ReplyKeyboardMarkup([["✅ Так", "❌ Ні"]], resize_keyboard=True), parse_mode=ParseMode.HTML); return CONFIRM
+    context.user_data['show_tg'] = update.message.text
+    context.user_data['username'] = update.effective_user.username
+    res = generate_summary(context.user_data)
+    context.user_data['summary'] = res
+    await update.message.reply_text(f"ПЕРЕВІРКА:\n\n{res}\n\nПублікуємо?", 
+                                   reply_markup=ReplyKeyboardMarkup([["✅ Так", "❌ Ні"]], resize_keyboard=True), parse_mode=ParseMode.HTML)
+    return CONFIRM
 
 async def final_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "✅ Так":
-        ps = context.user_data.get('photos', []); cap = context.user_data['summary']; sent_msg = None
+        ps = context.user_data.get('photos', [])
+        cap = context.user_data['summary']
+        sent_msg = None
         try:
-            if not ps: sent_msg = await context.bot.send_message(CHANNEL_ID, cap, parse_mode=ParseMode.HTML)
-            elif len(ps) == 1: sent_msg = await context.bot.send_photo(CHANNEL_ID, ps[0], caption=cap, parse_mode=ParseMode.HTML)
+            if not ps:
+                sent_msg = await context.bot.send_message(CHANNEL_ID, cap, parse_mode=ParseMode.HTML)
+            elif len(ps) == 1:
+                sent_msg = await context.bot.send_photo(CHANNEL_ID, ps[0], caption=cap, parse_mode=ParseMode.HTML)
             else:
-                msgs = await context.bot.send_media_group(CHANNEL_ID, [InputMediaPhoto(p, caption=cap if i==0 else "", parse_mode=ParseMode.HTML) for i,p in enumerate(ps[:10])])
+                media = [InputMediaPhoto(ps[0], caption=cap, parse_mode=ParseMode.HTML)]
+                for p in ps[1:10]: media.append(InputMediaPhoto(p))
+                msgs = await context.bot.send_media_group(CHANNEL_ID, media)
                 sent_msg = msgs[0]
-            conn = sqlite3.connect(DB_PATH); conn.execute('INSERT INTO ads (user_id, details, msg_id) VALUES (?, ?, ?)', (update.effective_user.id, cap, sent_msg.message_id)); conn.commit(); conn.close()
-            await update.message.reply_text("✅ Готово!", reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"]], resize_keyboard=True))
-        except: await update.message.reply_text("Помилка прав.")
+            
+            conn = sqlite3.connect(DB_PATH)
+            conn.execute('INSERT INTO ads (user_id, details, msg_id) VALUES (?, ?, ?)', (update.effective_user.id, cap, sent_msg.message_id))
+            conn.commit(); conn.close()
+            await update.message.reply_text("✅ Опубліковано!", reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"]], resize_keyboard=True))
+        except:
+            await update.message.reply_text("❌ Помилка прав.")
     return ConversationHandler.END
+
+async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    conn = sqlite3.connect(DB_PATH); cursor = conn.cursor()
+    cursor.execute('SELECT id, details, msg_id FROM ads WHERE user_id = ? ORDER BY id DESC', (user_id,))
+    rows = cursor.fetchall(); conn.close()
+    if not rows:
+        await update.message.reply_text("У вас немає активних оголошень.")
+        return
+    for r in rows:
+        kb = [[InlineKeyboardButton("💰 Змінити ціну", callback_data=f"editprice_{r[0]}")],
+              [InlineKeyboardButton("🗑 Видалити всюди", callback_data=f"del_{r[0]}_{r[2]}")]]
+        await update.message.reply_text(f"Оголошення:\n\n{r[1]}", parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
+
+async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query; data = query.data.split("_"); action = data[0]; db_id = data[1]
+    if action == "del":
+        try: await context.bot.delete_message(CHANNEL_ID, int(data[2]))
+        except: pass
+        conn = sqlite3.connect(DB_PATH); conn.execute('DELETE FROM ads WHERE id = ?', (db_id,)); conn.commit(); conn.close()
+        await query.edit_message_text("🗑 Видалено.")
+    elif action == "editprice":
+        context.user_data['edit_db_id'] = db_id
+        await query.message.reply_text("Введіть НОВУ ціну ($):")
+        return EDIT_PRICE
+
+async def save_new_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    new_price = update.message.text; db_id = context.user_data['edit_db_id']
+    conn = sqlite3.connect(DB_PATH); cursor = conn.cursor()
+    cursor.execute('SELECT details, msg_id FROM ads WHERE id = ?', (db_id,)); res = cursor.fetchone()
+    if res:
+        old_text = res[0]; msg_id = res[1]
+        new_text = old_text.split("Ціна:")[0] + f"Ціна: {new_price}$</b>" + old_text.split("$</b>")[1]
+        cursor.execute('UPDATE ads SET details = ? WHERE id = ?', (new_text, db_id)); conn.commit()
+        try:
+            await context.bot.edit_message_caption(chat_id=CHANNEL_ID, message_id=msg_id, caption=new_text, parse_mode=ParseMode.HTML)
+        except:
+            await context.bot.edit_message_text(chat_id=CHANNEL_ID, message_id=msg_id, text=new_text, parse_mode=ParseMode.HTML)
+        await update.message.reply_text("✅ Ціну оновлено!")
+    conn.close(); return ConversationHandler.END
 
 # --- ЗАПУСК ---
 class HealthCheck(BaseHTTPRequestHandler):
@@ -182,10 +209,10 @@ async def main():
     app.add_handler(conv)
     
     await app.initialize()
-    await app.bot.delete_webhook(drop_pending_updates=True) # Очищаем старые запросы
+    await app.bot.delete_webhook(drop_pending_updates=True) # Сброс старых команд
     await app.updater.start_polling()
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
     asyncio.run(main())
-         
+ 
