@@ -3,16 +3,16 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# Логування, щоб ми бачили все в Railway
+# Налаштування логування для Railway
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = "8076199435:AAGNFYLPXaKUuzb5Y3Or51Udv-vZFmkwoOk"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info("Отримано команду /start")
-    await update.message.reply_text("Привіт! Я працюю! Якщо ти бачиш це повідомлення, значить зв'язок встановлено.")
+    logging.info("!!! КОМАНДА СТАРТ ОТРИМАНА !!!")
+    await update.message.reply_text("Бот працює! Я бачу твою команду.")
 
-# Міні-сервер для Railway, щоб він не вимикав бота
+# Міні-сервер для підтримки життя на Railway
 class Health(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -20,22 +20,21 @@ class Health(BaseHTTPRequestHandler):
         self.wfile.write(b"OK")
 
 async def main():
-    # Запуск сервера перевірки працездатності в окремому потоці
+    # Запуск сервера перевірки
     port = int(os.environ.get("PORT", 8080))
     threading.Thread(target=lambda: HTTPServer(('0.0.0.0', port), Health).serve_forever(), daemon=True).start()
     
-    # Налаштування бота
+    # Ініціалізація бота
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     
-    logging.info("Бот запускається...")
+    logging.info("--- БОТ ЗАПУСКАЄТЬСЯ ---")
     
-    # Очищаємо чергу і запускаємо опитування
+    # Очищуємо всі старі запити (це прибере завислі повідомлення)
     await app.initialize()
     await app.bot.delete_webhook(drop_pending_updates=True)
-    await app.updater.start_polling()
+    await app.updater.start_polling(drop_pending_updates=True)
     
-    # Тримаємо програму запущеною
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
