@@ -8,7 +8,7 @@ from telegram.constants import ParseMode
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # --- КОНФІГУРАЦІЯ ---
-TOKEN = "8076199435:AAEun5vwRl7f89vFZ1E5fJ5C1H4CDe7LLtw"
+TOKEN = "8076199435:AAGSWx8kZnZTno2R-_7bxiIcMwHksWGtiyI"
 CHANNEL_ID = "@autochopOdessa" 
 CHANNEL_LINK = "https://t.me/autochopOdessa"
 BOT_NAME = "AutoChop Bot"
