@@ -68,7 +68,7 @@ async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['description'] = update.message.text
-    await update.message.reply_text("Фото (до 10 шт) + /done:", reply_markup=ReplyKeyboardMarkup([["➡️ Без фото"]], resize_keyboard=True))
+    await update.message.reply_text("Надішліть фото і натисніть /done:", reply_markup=ReplyKeyboardMarkup([["➡️ Без фото"]], resize_keyboard=True))
     return PHOTOS
 
 async def get_photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -85,7 +85,7 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_tg(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['show_tg'] = update.message.text
-    u = update.effective_user.username or "користувач"
+    u = update.effective_user.username or "user"
     tg = f"@{u}" if update.message.text == "Так" else "приховано"
     d = context.user_data
     res = (f"🚘 <b>{d['make']} {d['model']}</b>\n📅 Рік: {d['year']}\n⚙️ КПП: {d['gearbox']}\n⛽️ {d['fuel']}\n"
@@ -168,4 +168,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
- 
+    
