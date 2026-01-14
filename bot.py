@@ -4,6 +4,7 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InputMedi
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
 from telegram.constants import ParseMode
 
+# Логирование
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = "8076199435:AAEun5vwRl7f89vFZ1E5fJ5C1H4CDe7LLtw"
@@ -14,6 +15,7 @@ DB_PATH = "ads.db"
 (MAKE, MODEL, YEAR, GEARBOX, FUEL, DRIVE, DISTRICT, TOWN, PRICE, 
  DESCRIPTION, PHOTOS, PHONE, SHOW_CONTACT, CONFIRM, EDIT_PRICE) = range(15)
 
+# --- Инициализация БД ---
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute('CREATE TABLE IF NOT EXISTS ads (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, details TEXT, msg_id INTEGER)')
@@ -25,16 +27,15 @@ def generate_summary(data):
     return (f"🚘 <b>{data['make']} {data['model']}</b>\n"
             f"📅 Рік: {data['year']}\n"
             f"⚙️ КПП: {data['gearbox']} | ⛽️ {data['fuel']}\n"
-            f"🛣 Привід: {data['drive']}\n"
             f"📍 {data['district']} р-н, {data['town']}\n"
             f"💰 <b>Ціна: {data['price']}$</b>\n\n"
             f"📝 <b>Опис:</b> {data['description']}\n\n"
             f"📞 Тел: <code>{data['phone']}</code>\n👤 TG: {tg_status}")
 
-# --- ФУНКЦИИ УПРАВЛЕНИЯ ---
+# --- ФУНКЦИИ ОБРАБОТКИ (ВАЖЕН ПОРЯДОК) ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚗 Auto Shop Odessa", 
+    await update.message.reply_text("🚗 Вітаємо в Auto Shop Odessa!", 
         reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"], ["🗂 Мої оголошення"]], resize_keyboard=True))
     return ConversationHandler.END
 
@@ -48,7 +49,7 @@ async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     for r in rows:
         kb = [[InlineKeyboardButton("💰 Змінити ціну", callback_data=f"editprice_{r[0]}")],
-              [InlineKeyboardButton("🗑 Видалити всюди", callback_data=f"del_{r[0]}_{r[2]}")]]
+              [InlineKeyboardButton("🗑 Видалити", callback_data=f"del_{r[0]}_{r[2]}")]]
         await update.message.reply_text(f"Ваше оголошення:\n\n{r[1]}", parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
 
 async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -58,7 +59,6 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except: pass
         conn = sqlite3.connect(DB_PATH); conn.execute('DELETE FROM ads WHERE id = ?', (db_id,)); conn.commit(); conn.close()
         await query.edit_message_text("🗑 Видалено всюди.")
-        return ConversationHandler.END
     elif action == "editprice":
         context.user_data['edit_db_id'] = db_id
         await query.message.reply_text("Введіть НОВУ ціну ($):")
@@ -66,20 +66,15 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def save_new_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     new_price = update.message.text; db_id = context.user_data['edit_db_id']
-    conn = sqlite3.connect(DB_PATH); cursor = conn.cursor()
-    cursor.execute('SELECT details, msg_id FROM ads WHERE id = ?', (db_id,)); res = cursor.fetchone()
+    conn = sqlite3.connect(DB_PATH); cursor = conn.cursor(); cursor.execute('SELECT details, msg_id FROM ads WHERE id = ?', (db_id,)); res = cursor.fetchone()
     if res:
         old_text = res[0]; msg_id = res[1]
-        try:
-            new_text = old_text.split("Ціна:")[0] + f"Ціна: {new_price}$</b>" + old_text.split("$</b>")[1]
-            cursor.execute('UPDATE ads SET details = ? WHERE id = ?', (new_text, db_id)); conn.commit()
-            try: await context.bot.edit_message_caption(chat_id=CHANNEL_ID, message_id=msg_id, caption=new_text, parse_mode=ParseMode.HTML)
-            except: await context.bot.edit_message_text(chat_id=CHANNEL_ID, message_id=msg_id, text=new_text, parse_mode=ParseMode.HTML)
-            await update.message.reply_text("✅ Ціну оновлено!", reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"], ["🗂 Мої оголошення"]], resize_keyboard=True))
-        except: await update.message.reply_text("Помилка оновлення.")
+        new_text = old_text.split("Ціна:")[0] + f"Ціна: {new_price}$</b>" + old_text.split("$</b>")[1]
+        cursor.execute('UPDATE ads SET details = ? WHERE id = ?', (new_text, db_id)); conn.commit()
+        try: await context.bot.edit_message_caption(chat_id=CHANNEL_ID, message_id=msg_id, caption=new_text, parse_mode=ParseMode.HTML)
+        except: await context.bot.edit_message_text(chat_id=CHANNEL_ID, message_id=msg_id, text=new_text, parse_mode=ParseMode.HTML)
+        await update.message.reply_text("✅ Ціну оновлено!")
     conn.close(); return ConversationHandler.END
-
-# --- АНКЕТА ---
 
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear(); context.user_data['photos'] = []
@@ -145,19 +140,18 @@ async def final_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msgs = await context.bot.send_media_group(CHANNEL_ID, [InputMediaPhoto(p, caption=cap if i==0 else "", parse_mode=ParseMode.HTML) for i,p in enumerate(ps[:10])])
                 sent_msg = msgs[0]
             conn = sqlite3.connect(DB_PATH); conn.execute('INSERT INTO ads (user_id, details, msg_id) VALUES (?, ?, ?)', (update.effective_user.id, cap, sent_msg.message_id)); conn.commit(); conn.close()
-            await update.message.reply_text("✅ Опубліковано!", reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"]], resize_keyboard=True))
+            await update.message.reply_text("✅ Готово!", reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"]], resize_keyboard=True))
         except: await update.message.reply_text("Помилка прав.")
-    else:
-         await update.message.reply_text("Скасовано.", reply_markup=ReplyKeyboardMarkup([["➕ Нове оголошення"]], resize_keyboard=True))
     return ConversationHandler.END
 
 # --- ЗАПУСК ---
-class H(BaseHTTPRequestHandler):
+class HealthCheck(BaseHTTPRequestHandler):
     def do_GET(self): self.send_response(200); self.end_headers(); self.wfile.write(b"OK")
 
 async def main():
     init_db()
-    threading.Thread(target=lambda: HTTPServer(('0.0.0.0', int(os.environ.get("PORT", 8080))), H).serve_forever(), daemon=True).start()
+    threading.Thread(target=lambda: HTTPServer(('0.0.0.0', int(os.environ.get("PORT", 8080))), HealthCheck).serve_forever(), daemon=True).start()
+    
     app = ApplicationBuilder().token(TOKEN).build()
     
     conv = ConversationHandler(
@@ -188,10 +182,10 @@ async def main():
     app.add_handler(conv)
     
     await app.initialize()
-    await app.bot.delete_webhook(drop_pending_updates=True)
+    await app.bot.delete_webhook(drop_pending_updates=True) # Очищаем старые запросы
     await app.updater.start_polling()
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
     asyncio.run(main())
- 
+         
