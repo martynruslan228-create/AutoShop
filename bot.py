@@ -42,6 +42,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ConversationHandler.END
 
+# --- МОЇ ОГОЛОШЕННЯ ТА РЕДАГУВАННЯ ---
+
+async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    conn = sqlite3.connect("ads.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, text FROM ads WHERE user_id = ?", (user_id,))
+    ads = cursor.fetchall()
+    conn.close()
+
+    if not ads:
+        await update.message.reply_text("У вас немає активних оголошень.")
+        return ConversationHandler.END
+
+    for ad_id, text in ads:
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📝 Редагувати ціну", callback_query_data=f"edit_{ad_id}")],
+            [InlineKeyboardButton("🗑 Видалити", callback_query_data=f"del_{ad_id}")]
+        ])
+        await update.message.reply_text(text, reply_markup=kb)
+    return ConversationHandler.END
+
 # --- ПРОЦЕС СТВОРЕННЯ ОГОЛОШЕННЯ ---
 
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -49,64 +71,75 @@ async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return BRAND
 
 async def get_brand(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == "❌ Скасувати": return await start(update, context)
-    context.user_data['brand'] = update.message.text
+    text = update.message.text
+    if text == "❌ Скасувати": return await start(update, context)
+    if text == "🗂 Мої оголошення": return await my_ads(update, context)
+    context.user_data['brand'] = text
     await update.message.reply_text("2. Введіть модель:")
     return MODEL
 
 async def get_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "🗂 Мої оголошення": return await my_ads(update, context)
     context.user_data['model'] = update.message.text
     await update.message.reply_text("3. Введіть рік випуску:")
     return YEAR
 
 async def get_year(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "🗂 Мої оголошення": return await my_ads(update, context)
     context.user_data['year'] = update.message.text
     await update.message.reply_text("4. Введіть об'єм двигуна (наприклад, 2.0):")
     return ENGINE
 
 async def get_engine(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "🗂 Мої оголошення": return await my_ads(update, context)
     context.user_data['engine'] = update.message.text
     kb = [["Бензин", "Дизель"], ["Газ / Бензин", "Електро", "Гібрид"]]
     await update.message.reply_text("5. Оберіть тип палива:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
     return FUEL
 
 async def get_fuel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "🗂 Мої оголошення": return await my_ads(update, context)
     context.user_data['fuel'] = update.message.text
     kb = [["Автомат", "Механіка"], ["Робот", "Варіатор"]]
     await update.message.reply_text("6. Тип КПП:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
     return GEARBOX
 
 async def get_gearbox(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "🗂 Мої оголошення": return await my_ads(update, context)
     context.user_data['gearbox'] = update.message.text
     kb = [["Передній", "Задній", "Повний"]]
     await update.message.reply_text("7. Привід:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
     return DRIVE
 
 async def get_drive(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "🗂 Мої оголошення": return await my_ads(update, context)
     context.user_data['drive'] = update.message.text
     await update.message.reply_text("8. Додайте опис авто:")
     return DESC
 
 async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "🗂 Мої оголошення": return await my_ads(update, context)
     context.user_data['desc'] = update.message.text
     await update.message.reply_text("9. Введіть ціну ($):")
     return PRICE
 
 async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "🗂 Мої оголошення": return await my_ads(update, context)
     context.user_data['price'] = update.message.text
     kb = [["⏩ Пропустити фото"]]
     await update.message.reply_text("10. Надішліть фото або натисніть пропустити:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
     return PHOTO
 
 async def get_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "🗂 Мої оголошення": return await my_ads(update, context)
     context.user_data['photo_id'] = update.message.photo[-1].file_id if update.message.photo else None
     districts = [["Березівський", "Білгород-Дністровський"], ["Болградський", "Ізмаїльський"], ["Одеський", "Подільський"], ["Роздільнянський"]]
     await update.message.reply_text("11. Оберіть район Одеської області:", reply_markup=ReplyKeyboardMarkup(districts, resize_keyboard=True))
     return DISTRICT
 
 async def get_district(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "🗂 Мої оголошення": return await my_ads(update, context)
     context.user_data['district'] = update.message.text
-    # Видаляємо кнопки районів для ручного вводу міста
     await update.message.reply_text(
         "12. Введіть назву населеного пункту (місто/село) вручну:", 
         reply_markup=ReplyKeyboardRemove()
@@ -122,7 +155,6 @@ async def get_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_tg_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     context.user_data['tg_link'] = f"@{user.username}" if update.message.text == "✅ Так" and user.username else "Приватна особа"
-    # Видаляємо кнопки Так/Ні для ручного вводу номера
     await update.message.reply_text(
         "14. Введіть ваш номер телефону вручну (або '-' якщо не хочете вказувати):", 
         reply_markup=ReplyKeyboardRemove()
@@ -165,26 +197,7 @@ async def finish_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return await start(update, context)
 
-# --- МОЇ ОГОЛОШЕННЯ ТА РЕДАГУВАННЯ ---
-
-async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    conn = sqlite3.connect("ads.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, text FROM ads WHERE user_id = ?", (user_id,))
-    ads = cursor.fetchall()
-    conn.close()
-
-    if not ads:
-        await update.message.reply_text("У вас немає активних оголошень.")
-        return
-
-    for ad_id, text in ads:
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📝 Редагувати ціну", callback_query_data=f"edit_{ad_id}")],
-            [InlineKeyboardButton("🗑 Видалити", callback_query_data=f"del_{ad_id}")]
-        ])
-        await update.message.reply_text(text, reply_markup=kb)
+# --- CALLBACK ROUTER ТА РЕДАГУВАННЯ ---
 
 async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -245,8 +258,10 @@ async def main():
     app = Application.builder().token(TOKEN).build()
 
     conv_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^➕ Нове оголошення$"), new_ad), 
-                      CallbackQueryHandler(callback_router, pattern="^edit_")],
+        entry_points=[
+            MessageHandler(filters.Regex("^➕ Нове оголошення$"), new_ad),
+            MessageHandler(filters.Regex("^🗂 Мої оголошення$"), my_ads)
+        ],
         states={
             BRAND: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_brand)],
             MODEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_model)],
@@ -264,7 +279,7 @@ async def main():
             PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, finish_ad)],
             EDIT_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_new_price)],
         },
-        fallbacks=[CommandHandler("start", start)],
+        fallbacks=[CommandHandler("start", start), MessageHandler(filters.Regex("^🗂 Мої оголошення$"), my_ads)],
     )
 
     app.add_handler(CommandHandler("start", start))
@@ -280,3 +295,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
