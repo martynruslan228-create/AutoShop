@@ -11,6 +11,7 @@ CHANNEL_ID = "@autochopOdessa"
 
 BRAND, MODEL, YEAR, ENGINE, FUEL, GEARBOX, DRIVE, DESC, PRICE, PHOTO, DISTRICT, CITY, TG_CONTACT, PHONE, EDIT_PRICE = range(15)
 
+# БАЗА ДАНИХ
 def init_db():
     conn = sqlite3.connect("ads.db")
     cursor = conn.cursor()
@@ -22,6 +23,7 @@ def init_db():
 
 init_db()
 
+# ГОЛОВНЕ МЕНЮ
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome = (
         "Вітаємо!\n\nЯ — офіційний бот Auto Shop Odessa\n"
@@ -31,6 +33,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(welcome, reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True), disable_web_page_preview=True)
     return ConversationHandler.END
 
+# ФУНКЦІЯ МОЇ ОГОЛОШЕННЯ
 async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conn = sqlite3.connect("ads.db"); cursor = conn.cursor()
@@ -45,11 +48,10 @@ async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("📝 Редагувати ціну", callback_query_data=f"edit_{ad_id}")],
                 [InlineKeyboardButton("🗑 Видалити", callback_query_data=f"del_{ad_id}")]
             ])
-            # Використовуємо parse_mode=None щоб уникнути помилок з символами
             await update.message.reply_text(text, reply_markup=kb, parse_mode=None)
     
     kb = [["➕ Нове оголошення"], ["🗂 Мої оголошення"]]
-    await update.message.reply_text("Оберіть наступну дію:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    await update.message.reply_text("Оберіть дію:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
     return ConversationHandler.END
 
 # --- АНКЕТА ---
@@ -110,7 +112,8 @@ async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return PHOTO
 
 async def get_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text in ["✅ Завантажив (продовжити)", "⏩ Пропустити фото"]:
+    text = update.message.text
+    if text in ["✅ Завантажив (продовжити)", "⏩ Пропустити фото"]:
         districts = [["Березівський", "Білгород-Дністровський"], ["Болградський", "Ізмаїльський"], ["Одеський", "Подільський"], ["Роздільнянський"]]
         await update.message.reply_text("11. Оберіть район:", reply_markup=ReplyKeyboardMarkup(districts, resize_keyboard=True))
         return DISTRICT
@@ -147,7 +150,6 @@ async def finish_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if photos:
             media = [InputMediaPhoto(photos[0], caption=caption)]
             for p in photos[1:10]: media.append(InputMediaPhoto(p))
-            # Надсилаємо без parse_mode щоб не було помилок "Can't parse entities"
             msgs = await context.bot.send_media_group(chat_id=CHANNEL_ID, media=media)
             msg_id = msgs[0].message_id
         else:
@@ -162,11 +164,10 @@ async def finish_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Помилка: {e}")
 
-    # Важливо: Повертаємо END, щоб вийти з анкети і кнопки знову працювали
     await start(update, context)
     return ConversationHandler.END
 
-# --- РЕДАГУВАННЯ ---
+# --- РЕДАГУВАННЯ ТА ВИДАЛЕННЯ ---
 
 async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query; data = query.data; await query.answer()
@@ -199,9 +200,11 @@ async def save_new_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cursor.execute("UPDATE ads SET price = ?, text = ? WHERE id = ?", (new_price, new_text, ad_id)); conn.commit()
             await update.message.reply_text("✅ Ціну оновлено!")
         except Exception as e: await update.message.reply_text(f"Помилка: {e}")
-    conn.close(); 
+    conn.close()
     await start(update, context)
     return ConversationHandler.END
+
+# --- ТЕХНІЧНИЙ МОДУЛЬ ---
 
 class Health(BaseHTTPRequestHandler):
     def do_GET(self): self.send_response(200); self.end_headers(); self.wfile.write(b"OK")
@@ -211,7 +214,6 @@ async def main():
     threading.Thread(target=lambda: HTTPServer(('0.0.0.0', port), Health).serve_forever(), daemon=True).start()
     app = Application.builder().token(TOKEN).build()
     
-    # Регулярні вирази для кнопок
     re_new_ad = "^➕ Нове оголошення$"
     re_my_ads = "^🗂 Мої оголошення$"
     re_cancel = "^❌ Скасувати$"
@@ -253,4 +255,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-            
+    
