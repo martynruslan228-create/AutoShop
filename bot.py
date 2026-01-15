@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 TOKEN = "8076199435:AAGSWx8kZnZTno2R-_7bxiIcMwHksWGtiyI"
 CHANNEL_ID = "@autochopOdessa"
 
+# Етапи
 BRAND, MODEL, YEAR, ENGINE, FUEL, GEARBOX, DRIVE, DESC, PRICE, PHOTO, DISTRICT, CITY, TG_CONTACT, PHONE, EDIT_PRICE = range(15)
 
 def init_db():
@@ -45,20 +46,21 @@ async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("📝 Редагувати ціну", callback_query_data=f"edit_{ad_id}")],
                 [InlineKeyboardButton("🗑 Видалити", callback_query_data=f"del_{ad_id}")]
             ])
-            # Вимкнено parse_mode для запобігання помилок парсингу
             await update.message.reply_text(text, reply_markup=kb, parse_mode=None)
     
     kb = [["➕ Нове оголошення"], ["🗂 Мої оголошення"]]
-    await update.message.reply_text("Оберіть наступну дію:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    await update.message.reply_text("Оберіть дію:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    # Повертаємо END, щоб після перегляду оголошень користувач міг знову натиснути будь-яку кнопку
     return ConversationHandler.END
 
-# --- ПРОЦЕС АНКЕТИ ---
+# --- АНКЕТА ---
 
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("1. Введіть марку авто:", reply_markup=ReplyKeyboardMarkup([["❌ Скасувати"]], resize_keyboard=True))
     return BRAND
 
+# ... (Кроки анкети get_brand, get_model і т.д. залишаються без змін)
 async def get_brand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['brand'] = update.message.text
     await update.message.reply_text("2. Введіть модель:")
@@ -141,7 +143,6 @@ async def finish_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = (f"🚗 {ud['brand']} {ud['model']} ({ud['year']})\n\n🔹 Об'єм: {ud['engine']} л.\n⛽️ Паливо: {ud['fuel']}\n"
                f"⚙️ КПП: {ud['gearbox']}\n☸️ Привід: {ud['drive']}\n📍 Місце: {ud['district']} р-н, {ud['city']}\n\n"
                f"📝 Опис:\n{ud['desc']}\n\n💰 Ціна: {ud['price']}$\n\n📞 Телефон: {phone}\n👤 Контакт: {ud.get('tg_link')}")
-    
     try:
         photos = ud.get('photos', [])
         if photos:
@@ -152,7 +153,6 @@ async def finish_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             msg = await context.bot.send_message(chat_id=CHANNEL_ID, text=caption, parse_mode=None)
             msg_id = msg.message_id
-        
         conn = sqlite3.connect("ads.db"); cursor = conn.cursor()
         cursor.execute("INSERT INTO ads (user_id, msg_id, text, photo_ids, price) VALUES (?, ?, ?, ?, ?)",
                        (update.effective_user.id, msg_id, caption, ",".join(photos), ud['price']))
@@ -160,12 +160,11 @@ async def finish_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ Опубліковано!")
     except Exception as e:
         await update.message.reply_text(f"❌ Помилка: {e}")
-
-    # ПРИМУСОВЕ ПОВЕРНЕННЯ ДО ГОЛОВНОГО МЕНЮ ТА ЗАВЕРШЕННЯ ДІАЛОГУ
+    
     await start(update, context)
     return ConversationHandler.END
 
-# --- РЕДАГУВАННЯ ТА ТЕХНІЧНА ЧАСТИНА ---
+# --- РЕДАГУВАННЯ ---
 
 async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query; data = query.data; await query.answer()
@@ -202,6 +201,8 @@ async def save_new_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await start(update, context)
     return ConversationHandler.END
 
+# --- ЗАПУСК ---
+
 class Health(BaseHTTPRequestHandler):
     def do_GET(self): self.send_response(200); self.end_headers(); self.wfile.write(b"OK")
 
@@ -215,7 +216,10 @@ async def main():
     re_cancel = "^❌ Скасувати$"
 
     conv_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex(re_new_ad), new_ad)],
+        entry_points=[
+            MessageHandler(filters.Regex(re_new_ad), new_ad),
+            MessageHandler(filters.Regex(re_my_ads), my_ads) # ТЕПЕР ЦЕ ТЕЖ ТОЧКА ВХОДУ
+        ],
         states={
             BRAND: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_brand)],
             MODEL: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_model)],
@@ -240,9 +244,7 @@ async def main():
         allow_reentry=True
     )
 
-    # ВАЖЛИВО: MessageHandler для "Мої оголошення" стоїть ПЕРЕД conv_handler
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Regex(re_my_ads), my_ads))
     app.add_handler(conv_handler)
     app.add_handler(CallbackQueryHandler(callback_router))
 
