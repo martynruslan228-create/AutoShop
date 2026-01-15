@@ -11,7 +11,6 @@ CHANNEL_ID = "@autochopOdessa"
 
 BRAND, MODEL, YEAR, ENGINE, FUEL, GEARBOX, DRIVE, DESC, PRICE, PHOTO, DISTRICT, CITY, TG_CONTACT, PHONE, EDIT_PRICE = range(15)
 
-# БАЗА ДАНИХ
 def init_db():
     conn = sqlite3.connect("ads.db")
     cursor = conn.cursor()
@@ -23,7 +22,6 @@ def init_db():
 
 init_db()
 
-# ГОЛОВНЕ МЕНЮ
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome = (
         "Вітаємо!\n\nЯ — офіційний бот Auto Shop Odessa\n"
@@ -33,7 +31,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(welcome, reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True), disable_web_page_preview=True)
     return ConversationHandler.END
 
-# ФУНКЦІЯ МОЇ ОГОЛОШЕННЯ
 async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     conn = sqlite3.connect("ads.db"); cursor = conn.cursor()
@@ -48,13 +45,14 @@ async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("📝 Редагувати ціну", callback_query_data=f"edit_{ad_id}")],
                 [InlineKeyboardButton("🗑 Видалити", callback_query_data=f"del_{ad_id}")]
             ])
+            # Вимкнено parse_mode для запобігання помилок парсингу
             await update.message.reply_text(text, reply_markup=kb, parse_mode=None)
     
     kb = [["➕ Нове оголошення"], ["🗂 Мої оголошення"]]
-    await update.message.reply_text("Оберіть дію:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    await update.message.reply_text("Оберіть наступну дію:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
     return ConversationHandler.END
 
-# --- АНКЕТА ---
+# --- ПРОЦЕС АНКЕТИ ---
 
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -112,8 +110,7 @@ async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return PHOTO
 
 async def get_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if text in ["✅ Завантажив (продовжити)", "⏩ Пропустити фото"]:
+    if update.message.text in ["✅ Завантажив (продовжити)", "⏩ Пропустити фото"]:
         districts = [["Березівський", "Білгород-Дністровський"], ["Болградський", "Ізмаїльський"], ["Одеський", "Подільський"], ["Роздільнянський"]]
         await update.message.reply_text("11. Оберіть район:", reply_markup=ReplyKeyboardMarkup(districts, resize_keyboard=True))
         return DISTRICT
@@ -164,10 +161,11 @@ async def finish_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Помилка: {e}")
 
+    # ПРИМУСОВЕ ПОВЕРНЕННЯ ДО ГОЛОВНОГО МЕНЮ ТА ЗАВЕРШЕННЯ ДІАЛОГУ
     await start(update, context)
     return ConversationHandler.END
 
-# --- РЕДАГУВАННЯ ТА ВИДАЛЕННЯ ---
+# --- РЕДАГУВАННЯ ТА ТЕХНІЧНА ЧАСТИНА ---
 
 async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query; data = query.data; await query.answer()
@@ -203,8 +201,6 @@ async def save_new_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     await start(update, context)
     return ConversationHandler.END
-
-# --- ТЕХНІЧНИЙ МОДУЛЬ ---
 
 class Health(BaseHTTPRequestHandler):
     def do_GET(self): self.send_response(200); self.end_headers(); self.wfile.write(b"OK")
@@ -244,6 +240,7 @@ async def main():
         allow_reentry=True
     )
 
+    # ВАЖЛИВО: MessageHandler для "Мої оголошення" стоїть ПЕРЕД conv_handler
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Regex(re_my_ads), my_ads))
     app.add_handler(conv_handler)
