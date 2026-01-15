@@ -27,20 +27,18 @@ init_db()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [["➕ Нове оголошення"], ["🗂 Мої оголошення"]]
-    await update.message.reply_text("Головне меню:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    await update.message.reply_text("Вітаємо! Оберіть дію:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
     return ConversationHandler.END
 
 # --- ЛОГИКА "МОЇ ОГОЛОШЕННЯ" ---
 async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    conn = sqlite3.connect("ads.db")
-    cursor = conn.cursor()
+    conn = sqlite3.connect("ads.db"); cursor = conn.cursor()
     cursor.execute("SELECT id, brand, model, price FROM ads WHERE user_id = ?", (user_id,))
-    ads = cursor.fetchall()
-    conn.close()
+    ads = cursor.fetchall(); conn.close()
     
     if not ads:
-        await update.message.reply_text("У вас ще немає оголошень або база була очищена при оновленні.")
+        await update.message.reply_text("У вас немає активних оголошень.")
         return ConversationHandler.END
 
     for ad in ads:
@@ -54,10 +52,7 @@ async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- CALLBACKS (УДАЛЕНИЕ И РЕДАКТИРОВАНИЕ) ---
 async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data
-    await query.answer()
-    
+    query = update.callback_query; data = query.data; await query.answer()
     if data.startswith("del_"):
         ad_id = data.split("_")[1]
         conn = sqlite3.connect("ads.db"); cursor = conn.cursor()
@@ -70,7 +65,6 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.commit()
         conn.close()
         await query.edit_message_text("🗑 Оголошення видалено.")
-        
     elif data.startswith("edp_"):
         context.user_data['edit_ad_id'] = data.split("_")[1]
         await query.message.reply_text("Введіть нову ціну ($):")
@@ -96,12 +90,12 @@ async def save_new_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cursor.execute("UPDATE ads SET price = ?, full_text = ? WHERE id = ?", (new_price, new_text, ad_id))
             conn.commit()
             await update.message.reply_text("✅ Ціну оновлено!")
-        except Exception as e: await update.message.reply_text(f"Помилка: {e}")
+        except: await update.message.reply_text("Оновлено в боті, не вдалося змінити в каналі.")
     conn.close()
     await start(update, context)
     return ConversationHandler.END
 
-# --- АНКЕТА (ВАША ОРИГИНАЛЬНАЯ) ---
+# --- АНКЕТА ---
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("1. Введіть марку авто:", reply_markup=ReplyKeyboardMarkup([["❌ Скасувати"]], resize_keyboard=True))
@@ -167,7 +161,7 @@ async def get_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_district(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['district'] = update.message.text
-    await update.message.reply_text("12. Введіть місто/село вручну:", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("12. Введіть місто/село вручную:", reply_markup=ReplyKeyboardRemove())
     return CITY
 
 async def get_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -215,13 +209,13 @@ async def main():
     threading.Thread(target=lambda: HTTPServer(('0.0.0.0', port), Health).serve_forever(), daemon=True).start()
     app = Application.builder().token(TOKEN).build()
     
+    # Реєструємо кнопку "Мої оголошення" окремо і ПЕРШОЮ
+    app.add_handler(MessageHandler(filters.Regex("^🗂 Мої оголошення$"), my_ads))
+    
     conv_handler = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex("^➕ Нове оголошення$"), new_ad),
-            MessageHandler(filters.Regex("^🗂 Мої оголошення$"), my_ads)
-        ],
+        entry_points=[MessageHandler(filters.Regex("^➕ Нове оголошення$"), new_ad)],
         states={
-            BRAND: [MessageHandler(filters.TEXT & ~filters.Regex("^❌ Скасувати$") & ~filters.Regex("^🗂 Мої оголошення$"), get_brand)],
+            BRAND: [MessageHandler(filters.TEXT & ~filters.Regex("^❌ Скасувати$"), get_brand)],
             MODEL: [MessageHandler(filters.TEXT, get_model)],
             YEAR: [MessageHandler(filters.TEXT, get_year)],
             ENGINE: [MessageHandler(filters.TEXT, get_engine)],
@@ -237,11 +231,8 @@ async def main():
             PHONE: [MessageHandler(filters.TEXT, finish_ad)],
             EDIT_PRICE: [MessageHandler(filters.TEXT, save_new_price)],
         },
-        fallbacks=[
-            MessageHandler(filters.Regex("^❌ Скасувати$"), start),
-            MessageHandler(filters.Regex("^🗂 Мої оголошення$"), my_ads) # ЭТО РЕШАЕТ ПРОБЛЕМУ
-        ],
-        allow_reentry=True # ЭТО ПОЗВОЛЯЕТ ПЕРЕЗАПУСКАТЬ КНОПКИ
+        fallbacks=[MessageHandler(filters.Regex("^❌ Скасувати$"), start)],
+        allow_reentry=True
     )
 
     app.add_handler(CommandHandler("start", start))
@@ -254,4 +245,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
+            
