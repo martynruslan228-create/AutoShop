@@ -45,9 +45,9 @@ async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("📝 Редагувати ціну", callback_query_data=f"edit_{ad_id}")],
                 [InlineKeyboardButton("🗑 Видалити", callback_query_data=f"del_{ad_id}")]
             ])
-            await update.message.reply_text(text, reply_markup=kb)
+            # Використовуємо parse_mode=None щоб уникнути помилок з символами
+            await update.message.reply_text(text, reply_markup=kb, parse_mode=None)
     
-    # Возвращаем главное меню, чтобы кнопки не пропадали
     kb = [["➕ Нове оголошення"], ["🗂 Мої оголошення"]]
     await update.message.reply_text("Оберіть наступну дію:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
     return ConversationHandler.END
@@ -55,7 +55,7 @@ async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- АНКЕТА ---
 
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear() # Очистка данных перед новой анкетой
+    context.user_data.clear()
     await update.message.reply_text("1. Введіть марку авто:", reply_markup=ReplyKeyboardMarkup([["❌ Скасувати"]], resize_keyboard=True))
     return BRAND
 
@@ -106,7 +106,7 @@ async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['price'] = update.message.text
     context.user_data['photos'] = []
     kb = [["✅ Завантажив (продовжити)"], ["⏩ Пропустити фото"]]
-    await update.message.reply_text("10. Надішліть фото (можна декілька) і натисніть «Завантажив»:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    await update.message.reply_text("10. Надішліть фото і натисніть «Завантажив»:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
     return PHOTO
 
 async def get_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -114,11 +114,8 @@ async def get_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         districts = [["Березівський", "Білгород-Дністровський"], ["Болградський", "Ізмаїльський"], ["Одеський", "Подільський"], ["Роздільнянський"]]
         await update.message.reply_text("11. Оберіть район:", reply_markup=ReplyKeyboardMarkup(districts, resize_keyboard=True))
         return DISTRICT
-    
     if update.message.photo:
-        file_id = update.message.photo[-1].file_id
-        if 'photos' not in context.user_data: context.user_data['photos'] = []
-        context.user_data['photos'].append(file_id)
+        context.user_data['photos'].append(update.message.photo[-1].file_id)
     return PHOTO
 
 async def get_district(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -150,10 +147,11 @@ async def finish_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if photos:
             media = [InputMediaPhoto(photos[0], caption=caption)]
             for p in photos[1:10]: media.append(InputMediaPhoto(p))
+            # Надсилаємо без parse_mode щоб не було помилок "Can't parse entities"
             msgs = await context.bot.send_media_group(chat_id=CHANNEL_ID, media=media)
             msg_id = msgs[0].message_id
         else:
-            msg = await context.bot.send_message(chat_id=CHANNEL_ID, text=caption)
+            msg = await context.bot.send_message(chat_id=CHANNEL_ID, text=caption, parse_mode=None)
             msg_id = msg.message_id
         
         conn = sqlite3.connect("ads.db"); cursor = conn.cursor()
@@ -161,10 +159,14 @@ async def finish_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
                        (update.effective_user.id, msg_id, caption, ",".join(photos), ud['price']))
         conn.commit(); conn.close()
         await update.message.reply_text("✅ Опубліковано!")
-    except Exception as e: await update.message.reply_text(f"❌ Помилка: {e}")
-    return await start(update, context)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Помилка: {e}")
 
-# --- РЕДАГУВАННЯ ТА ВИДАЛЕННЯ ---
+    # Важливо: Повертаємо END, щоб вийти з анкети і кнопки знову працювали
+    await start(update, context)
+    return ConversationHandler.END
+
+# --- РЕДАГУВАННЯ ---
 
 async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query; data = query.data; await query.answer()
@@ -192,12 +194,14 @@ async def save_new_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if "Ціна:" in line: lines[i] = f"💰 Ціна: {new_price}$"
         new_text = '\n'.join(lines)
         try:
-            if photo_ids: await context.bot.edit_message_caption(chat_id=CHANNEL_ID, message_id=msg_id, caption=new_text)
-            else: await context.bot.edit_message_text(chat_id=CHANNEL_ID, message_id=msg_id, text=new_text)
+            if photo_ids: await context.bot.edit_message_caption(chat_id=CHANNEL_ID, message_id=msg_id, caption=new_text, parse_mode=None)
+            else: await context.bot.edit_message_text(chat_id=CHANNEL_ID, message_id=msg_id, text=new_text, parse_mode=None)
             cursor.execute("UPDATE ads SET price = ?, text = ? WHERE id = ?", (new_price, new_text, ad_id)); conn.commit()
             await update.message.reply_text("✅ Ціну оновлено!")
         except Exception as e: await update.message.reply_text(f"Помилка: {e}")
-    conn.close(); return await start(update, context)
+    conn.close(); 
+    await start(update, context)
+    return ConversationHandler.END
 
 class Health(BaseHTTPRequestHandler):
     def do_GET(self): self.send_response(200); self.end_headers(); self.wfile.write(b"OK")
@@ -207,7 +211,7 @@ async def main():
     threading.Thread(target=lambda: HTTPServer(('0.0.0.0', port), Health).serve_forever(), daemon=True).start()
     app = Application.builder().token(TOKEN).build()
     
-    # Регулярки для кнопок
+    # Регулярні вирази для кнопок
     re_new_ad = "^➕ Нове оголошення$"
     re_my_ads = "^🗂 Мої оголошення$"
     re_cancel = "^❌ Скасувати$"
@@ -233,13 +237,11 @@ async def main():
         },
         fallbacks=[
             MessageHandler(filters.Regex(re_cancel), start),
-            MessageHandler(filters.Regex(re_my_ads), my_ads),
-            CommandHandler("start", start)
+            MessageHandler(filters.Regex(re_my_ads), my_ads)
         ],
         allow_reentry=True
     )
 
-    # Важно: Добавляем обработчик кнопки "Мои объявления" ДОConversationHandler и ВНУТРИ fallbacks
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Regex(re_my_ads), my_ads))
     app.add_handler(conv_handler)
@@ -251,4 +253,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
+            
