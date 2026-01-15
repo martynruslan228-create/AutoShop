@@ -36,20 +36,29 @@ async def my_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect("ads.db"); cursor = conn.cursor()
     cursor.execute("SELECT id, text FROM ads WHERE user_id = ?", (user_id,))
     ads = cursor.fetchall(); conn.close()
+    
     if not ads:
         await update.message.reply_text("У вас немає активних оголошень.")
     else:
         for ad_id, text in ads:
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("📝 Редагувати ціну", callback_query_data=f"edit_{ad_id}")],
-                                       [InlineKeyboardButton("🗑 Видалити", callback_query_data=f"del_{ad_id}")]])
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📝 Редагувати ціну", callback_query_data=f"edit_{ad_id}")],
+                [InlineKeyboardButton("🗑 Видалити", callback_query_data=f"del_{ad_id}")]
+            ])
             await update.message.reply_text(text, reply_markup=kb)
+    
+    # Возвращаем главное меню, чтобы кнопки не пропадали
+    kb = [["➕ Нове оголошення"], ["🗂 Мої оголошення"]]
+    await update.message.reply_text("Оберіть наступну дію:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
     return ConversationHandler.END
 
+# --- АНКЕТА ---
+
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear() # Очистка данных перед новой анкетой
     await update.message.reply_text("1. Введіть марку авто:", reply_markup=ReplyKeyboardMarkup([["❌ Скасувати"]], resize_keyboard=True))
     return BRAND
 
-# --- ЕТАПИ АНКЕТИ (Бренд - Ціна) ---
 async def get_brand(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['brand'] = update.message.text
     await update.message.reply_text("2. Введіть модель:")
@@ -95,13 +104,13 @@ async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['price'] = update.message.text
-    context.user_data['photos'] = [] # Список для збереження всіх фото
-    kb = [["⏩ Пропустити фото", "✅ Завантажив (продовжити)"]]
+    context.user_data['photos'] = []
+    kb = [["✅ Завантажив (продовжити)"], ["⏩ Пропустити фото"]]
     await update.message.reply_text("10. Надішліть фото (можна декілька) і натисніть «Завантажив»:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
     return PHOTO
 
 async def get_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == "✅ Завантажив (продовжити)" or update.message.text == "⏩ Пропустити фото":
+    if update.message.text in ["✅ Завантажив (продовжити)", "⏩ Пропустити фото"]:
         districts = [["Березівський", "Білгород-Дністровський"], ["Болградський", "Ізмаїльський"], ["Одеський", "Подільський"], ["Роздільнянський"]]
         await update.message.reply_text("11. Оберіть район:", reply_markup=ReplyKeyboardMarkup(districts, resize_keyboard=True))
         return DISTRICT
@@ -156,6 +165,7 @@ async def finish_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await start(update, context)
 
 # --- РЕДАГУВАННЯ ТА ВИДАЛЕННЯ ---
+
 async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query; data = query.data; await query.answer()
     if data.startswith("del_"):
@@ -197,34 +207,41 @@ async def main():
     threading.Thread(target=lambda: HTTPServer(('0.0.0.0', port), Health).serve_forever(), daemon=True).start()
     app = Application.builder().token(TOKEN).build()
     
-    cancel_filter = filters.Regex("^❌ Скасувати$")
-    my_ads_filter = filters.Regex("^🗂 Мої оголошення$")
+    # Регулярки для кнопок
+    re_new_ad = "^➕ Нове оголошення$"
+    re_my_ads = "^🗂 Мої оголошення$"
+    re_cancel = "^❌ Скасувати$"
 
     conv_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^➕ Нове оголошення$"), new_ad)],
+        entry_points=[MessageHandler(filters.Regex(re_new_ad), new_ad)],
         states={
-            BRAND: [MessageHandler(filters.TEXT & ~cancel_filter & ~my_ads_filter, get_brand)],
-            MODEL: [MessageHandler(filters.TEXT & ~cancel_filter & ~my_ads_filter, get_model)],
-            YEAR: [MessageHandler(filters.TEXT & ~cancel_filter & ~my_ads_filter, get_year)],
-            ENGINE: [MessageHandler(filters.TEXT & ~cancel_filter & ~my_ads_filter, get_engine)],
-            FUEL: [MessageHandler(filters.TEXT & ~cancel_filter & ~my_ads_filter, get_fuel)],
-            GEARBOX: [MessageHandler(filters.TEXT & ~cancel_filter & ~my_ads_filter, get_gearbox)],
-            DRIVE: [MessageHandler(filters.TEXT & ~cancel_filter & ~my_ads_filter, get_drive)],
-            DESC: [MessageHandler(filters.TEXT & ~cancel_filter & ~my_ads_filter, get_desc)],
-            PRICE: [MessageHandler(filters.TEXT & ~cancel_filter & ~my_ads_filter, get_price)],
-            PHOTO: [MessageHandler(filters.PHOTO | filters.Regex("^(✅ Завантажив \(продовжити\)|⏩ Пропустити фото)$"), get_photo)],
-            DISTRICT: [MessageHandler(filters.TEXT & ~cancel_filter & ~my_ads_filter, get_district)],
-            CITY: [MessageHandler(filters.TEXT & ~cancel_filter & ~my_ads_filter, get_city)],
-            TG_CONTACT: [MessageHandler(filters.TEXT & ~cancel_filter & ~my_ads_filter, get_tg_contact)],
-            PHONE: [MessageHandler(filters.TEXT & ~cancel_filter & ~my_ads_filter, finish_ad)],
-            EDIT_PRICE: [MessageHandler(filters.TEXT & ~cancel_filter & ~my_ads_filter, save_new_price)],
+            BRAND: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_brand)],
+            MODEL: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_model)],
+            YEAR: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_year)],
+            ENGINE: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_engine)],
+            FUEL: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_fuel)],
+            GEARBOX: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_gearbox)],
+            DRIVE: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_drive)],
+            DESC: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_desc)],
+            PRICE: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_price)],
+            PHOTO: [MessageHandler((filters.PHOTO | filters.TEXT) & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_photo)],
+            DISTRICT: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_district)],
+            CITY: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_city)],
+            TG_CONTACT: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), get_tg_contact)],
+            PHONE: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), finish_ad)],
+            EDIT_PRICE: [MessageHandler(filters.TEXT & ~filters.Regex(re_cancel) & ~filters.Regex(re_my_ads), save_new_price)],
         },
-        fallbacks=[MessageHandler(cancel_filter, start), MessageHandler(my_ads_filter, my_ads)],
+        fallbacks=[
+            MessageHandler(filters.Regex(re_cancel), start),
+            MessageHandler(filters.Regex(re_my_ads), my_ads),
+            CommandHandler("start", start)
+        ],
         allow_reentry=True
     )
 
+    # Важно: Добавляем обработчик кнопки "Мои объявления" ДОConversationHandler и ВНУТРИ fallbacks
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(my_ads_filter, my_ads))
+    app.add_handler(MessageHandler(filters.Regex(re_my_ads), my_ads))
     app.add_handler(conv_handler)
     app.add_handler(CallbackQueryHandler(callback_router))
 
@@ -234,3 +251,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
