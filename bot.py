@@ -10,27 +10,29 @@ CHANNEL_ID = "@autochopOdessa"
 # Состояния
 BRAND, MODEL, PRICE, WAIT_EDIT = range(4)
 
-# --- БД ---
+# --- БАЗА ДАННЫХ ---
 def init_db():
     conn = sqlite3.connect("ads.db")
     cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS ads 
+    # Чистим старую таблицу, чтобы не было конфликтов
+    cursor.execute("DROP TABLE IF EXISTS ads")
+    cursor.execute('''CREATE TABLE ads 
                       (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, msg_id INTEGER, 
                        brand TEXT, model TEXT, price TEXT, full_text TEXT)''')
     conn.commit(); conn.close()
 
+# Вызываем инициализацию (Внимание: старая БД удалится для чистоты теста!)
 init_db()
 
-# --- МЕНЮ ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [["➕ Нове оголошення"], ["📝 Редагувати", "🗑 Видалити"]]
     await update.message.reply_text("🚗 Выберите действие:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
     return ConversationHandler.END
 
-# --- ПРОБЛЕМНЫЙ УЗЕЛ (ИСПРАВЛЕН) ---
+# --- ДИНАМИЧЕСКИЕ КНОПКИ (Имена из базы) ---
 async def show_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    action = "edit" if "Редагувати" in update.message.text else "del"
+    action_type = "edit" if "Редагувати" in update.message.text else "del"
     
     conn = sqlite3.connect("ads.db"); cursor = conn.cursor()
     cursor.execute("SELECT id, brand, model, price FROM ads WHERE user_id = ?", (user_id,))
@@ -40,27 +42,29 @@ async def show_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ У вас еще нет объявлений.")
         return
 
-    await update.message.reply_text(f"🔍 Найдено {len(ads)} объявлений. Нажмите кнопку выбора:")
+    await update.message.reply_text(f"🔍 Найдено {len(ads)} авто. Нажмите на название для выбора:")
 
     for ad in ads:
         ad_id, brand, model, price = ad
-        # Создаем кнопку максимально простым способом
-        button = InlineKeyboardButton(text=f"✅ Выбрать {brand} {model}", callback_query_data=f"{action}_{ad_id}")
-        reply_markup = InlineKeyboardMarkup([[button]]) # Список списков!
+        # Текст на самой кнопке теперь уникальный:
+        btn_text = f"🚗 {brand} {model} ({price}$)"
+        # Кодируем действие максимально коротко: 'e12' (edit 12) или 'd12' (del 12)
+        cb_data = f"{action_type[0]}{ad_id}" 
         
-        await update.message.reply_text(
-            f"🚘 {brand} {model} | {price}$",
-            reply_markup=reply_markup
-        )
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(text=btn_text, callback_query_data=cb_data)]])
+        
+        await update.message.reply_text(f"Управление объявлением:", reply_markup=kb)
 
-# --- ОБРАБОТКА ВЫБОРА ---
+# --- ОБРАБОТЧИК НАЖАТИЯ ---
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    data = query.data
+    data = query.data # Например 'e1' или 'd1'
     await query.answer()
 
-    if data.startswith("del_"):
-        ad_id = data.split("_")[1]
+    action = data[0] # 'e' или 'd'
+    ad_id = data[1:] # сам ID
+
+    if action == 'd': # УДАЛЕНИЕ
         conn = sqlite3.connect("ads.db"); cursor = conn.cursor()
         cursor.execute("SELECT msg_id FROM ads WHERE id = ?", (ad_id,))
         res = cursor.fetchone()
@@ -70,12 +74,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cursor.execute("DELETE FROM ads WHERE id = ?", (ad_id,))
             conn.commit()
         conn.close()
-        await query.edit_message_text("🗑 Удалено успешно!")
+        await query.edit_message_text("🗑 Удалено из канала и базы.")
 
-    elif data.startswith("edit_"):
-        ad_id = data.split("_")[1]
+    elif action == 'e': # РЕДАКТИРОВАНИЕ
         context.user_data['edit_id'] = ad_id
-        await query.message.reply_text(f"📝 Вы выбрали редактирование. Введите новую цену ($):")
+        await query.message.reply_text(f"📝 Введите новую цену ($) для этого авто:")
         return WAIT_EDIT
 
 # --- СОХРАНЕНИЕ ЦЕНЫ ---
@@ -94,17 +97,17 @@ async def save_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.edit_message_text(new_text, CHANNEL_ID, msg_id)
             cursor.execute("UPDATE ads SET price = ?, full_text = ? WHERE id = ?", (new_price, new_text, ad_id))
             conn.commit()
-            await update.message.reply_text("✅ Цена обновлена в канале!")
-        except Exception as e:
-            await update.message.reply_text(f"Ошибка в канале: {e}")
+            await update.message.reply_text("✅ Цена обновлена!")
+        except: await update.message.reply_text("❌ Не удалось обновить пост в канале.")
     conn.close()
     return await start(update, context)
 
 # --- МИНИ-АНКЕТА ---
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Марка:")
+    await update.message.reply_text("Марка:", reply_markup=ReplyKeyboardMarkup([["❌ Отмена"]], resize_keyboard=True))
     return BRAND
 async def get_brand(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text == "❌ Отмена": return await start(update, context)
     context.user_data['b'] = update.message.text; await update.message.reply_text("Модель:"); return MODEL
 async def get_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['m'] = update.message.text; await update.message.reply_text("Цена:"); return PRICE
@@ -120,19 +123,15 @@ async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Опубликовано!")
     return await start(update, context)
 
-# --- ЗАПУСК ---
 async def main():
     app = Application.builder().token(TOKEN).build()
-
-    # Глобальные команды
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Regex("^(📝 Редагувати|🗑 Видалити)$"), show_list))
 
-    # Диалог анкеты и редактирования
     conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^➕ Нове оголошення$"), new_ad)],
         states={
-            BRAND: [MessageHandler(filters.TEXT & ~filters.Regex("^(/start|📝|🗑)"), get_brand)],
+            BRAND: [MessageHandler(filters.TEXT & ~filters.Regex("^(📝|🗑|/)"), get_brand)],
             MODEL: [MessageHandler(filters.TEXT, get_model)],
             PRICE: [MessageHandler(filters.TEXT, get_price)],
             WAIT_EDIT: [MessageHandler(filters.TEXT, save_price)]
@@ -140,7 +139,6 @@ async def main():
         fallbacks=[CommandHandler("start", start)],
         allow_reentry=True
     )
-
     app.add_handler(conv)
     app.add_handler(CallbackQueryHandler(handle_callback))
 
@@ -150,4 +148,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
- 
+    
