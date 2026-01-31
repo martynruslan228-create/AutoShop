@@ -6,7 +6,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = "8076199435:AAGSWx8kZnZTno2R-_7bxiIcMwHksWGtiyI"
-CHANNEL_ID = -1003568390240
+CHANNEL_ID = "@autochopOdessa"
 
 # Состояния (добавлено MILEAGE)
 (BRAND, MODEL, YEAR, MILEAGE, ENGINE, FUEL, GEARBOX, DESC, PRICE, 
@@ -28,8 +28,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     kb = [["➕ Нове оголошення"], ["💰 Змінити ціну", "🗑 Видалити"]]
     await update.message.reply_text(
-        f"👋 Вітаю! я ваш помічник на каналі Для воїх.\n\n",
-        f"Я допоможу вам опублікувати ваше оголошення на канал  Оберіть потрібну дію на панелі нижче:",
+        f"👋 Вітаємо! Вас вітає головне меню бота **Auto Shop Odessa**.\n\n"
+        f"Я допоможу вам опублікувати ваше оголошення на канал {CHANNEL_ID}. Оберіть потрібну дію на панелі нижче:",
         reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
         parse_mode="Markdown"
     )
@@ -118,3 +118,81 @@ async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['price'] = update.message.text; context.user_data['photos'] = []
     await update.message.reply_text("10. Надішліть фото (МАКСИМУМ 10). Після завершення натисніть «✅ Готово»:", 
                                    reply_markup=ReplyKeyboardMarkup([["✅ Готово"], ["⏩ Пропустити"]], resize_keyboard=True))
+    return PHOTO
+async def get_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text in ["✅ Готово", "⏩ Пропустити"]:
+        districts = [["Березівський", "Білгород-Дністровський"], ["Болградський", "Ізмаїльський"], 
+                     ["Одеський", "Подільський"], ["Роздільнянський"]]
+        await update.message.reply_text("11. Оберіть район Одеської області:", reply_markup=ReplyKeyboardMarkup(districts, resize_keyboard=True)); return DISTRICT
+    if update.message.photo:
+        if len(context.user_data['photos']) < 10:
+            context.user_data['photos'].append(update.message.photo[-1].file_id)
+        else: await update.message.reply_text("⚠️ Ліміт 10 фото! Натисніть «✅ Готово»")
+    return PHOTO
+async def get_district(update: Update, context: ContextTypes.DEFAULT_TYPE): 
+    context.user_data['district'] = update.message.text
+    await update.message.reply_text("12. Введіть місто або село:", reply_markup=ReplyKeyboardRemove()); return CITY 
+async def get_city(update: Update, context: ContextTypes.DEFAULT_TYPE): 
+    context.user_data['city'] = update.message.text
+    await update.message.reply_text("13. Показати ваш Telegram для зв'язку?", reply_markup=ReplyKeyboardMarkup([["✅ Так", "❌ Ні"]], resize_keyboard=True)); return TG_CONTACT
+async def get_tg_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    u = update.effective_user; context.user_data['tg_link'] = f"@{u.username}" if update.message.text == "✅ Так" and u.username else "Приватна особа"
+    await update.message.reply_text("14. Введіть номер телефону для зв'язку:", reply_markup=ReplyKeyboardRemove()); return PHONE
+
+async def finish_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ud = context.user_data; phone = update.message.text
+    bot_link = f"https://t.me/{(await context.bot.get_me()).username}"
+    caption = (f"🚗 {ud['brand']} {ud['model']} ({ud['year']})\n\n🛣 Пробіг: {ud['mileage']} тис. км\n🔹 Об'єм: {ud['engine']} л.\n"
+               f"⛽️ Паливо: {ud['fuel']}\n⚙️ КПП: {ud['gearbox']}\n📍 Район: {ud['district']}, {ud['city']}\n\n"
+               f"📝 Опис:\n{ud['desc']}\n\n💰 Ціна: {ud['price']}$\n\n📞 Тел: {phone}\n👤 Контакт: {ud['tg_link']}\n\n"
+               f"➖➖➖➖➖➖➖➖➖➖\n📩 Щоб викласти своє оголошення, натисніть сюди 👉 {bot_link}")
+    try:
+        photos = ud.get('photos', [])
+        if photos:
+            msgs = await context.bot.send_media_group(CHANNEL_ID, media=[InputMediaPhoto(p, caption=caption if i==0 else "") for i, p in enumerate(photos[:10])])
+            msg_id = msgs[0].message_id
+        else:
+            msg = await context.bot.send_message(CHANNEL_ID, caption); msg_id = msg.message_id
+        conn = sqlite3.connect("ads.db"); c = conn.cursor()
+        c.execute("""INSERT INTO ads (user_id, msg_id, brand, model, year, mileage, engine, fuel, gearbox, desc, price, district, city, phone, tg_link, photo_ids, full_text) 
+                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (update.effective_user.id, msg_id, ud['brand'], ud['model'], ud['year'], ud['mileage'], ud['engine'], ud['fuel'], ud['gearbox'], ud['desc'], ud['price'], ud['district'], ud['city'], phone, ud['tg_link'], ",".join(photos), caption))
+        conn.commit(); conn.close()
+        await update.message.reply_text("✅ Оголошення опубліковано успішно!")
+    except Exception as e: await update.message.reply_text(f"Помилка: {e}")
+    return await start(update, context)
+
+class Health(BaseHTTPRequestHandler):
+    def do_GET(self): self.send_response(200); self.end_headers(); self.wfile.write(b"OK")
+async def main():
+    threading.Thread(target=lambda: HTTPServer(('0.0.0.0', int(os.environ.get("PORT", 8080))), Health).serve_forever(), daemon=True).start()
+    app = Application.builder().token(TOKEN).build()
+    conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^➕ Нове оголошення$"), new_ad), MessageHandler(filters.Regex("^(💰 Змінити ціну|🗑 Видалити)$"), show_list)],
+        states={
+            BRAND: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_brand)],
+            MODEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_model)],
+            YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_year)],
+            MILEAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_mileage)],
+            ENGINE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_engine)],
+            FUEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_fuel)],
+            GEARBOX: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_gearbox)],
+            DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_desc)],
+            PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_price)],
+            PHOTO: [MessageHandler(filters.PHOTO | filters.TEXT, get_photo)],
+            DISTRICT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_district)],
+            CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_city)],
+            TG_CONTACT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_tg_contact)],
+            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, finish_ad)],
+            CHOOSE_CAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_choice)],
+            WAIT_NEW_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, update_price)]
+        },
+        fallbacks=[CommandHandler("start", start)], allow_reentry=True
+    )
+    app.add_handler(conv); app.add_handler(CommandHandler("start", start))
+    await app.initialize(); await app.bot.delete_webhook(drop_pending_updates=True)
+    await app.start(); await app.updater.start_polling(); await asyncio.Event().wait()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+     
