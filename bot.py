@@ -6,7 +6,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = "8076199435:AAGSWx8kZnZTno2R-_7bxiIcMwHksWGtiyI"
-CHANNEL_ID = "@autochopOdessa"
+CHANNEL_ID = -1003568390240
 
 # Состояния (добавлено MILEAGE)
 (BRAND, MODEL, YEAR, MILEAGE, ENGINE, FUEL, GEARBOX, DESC, PRICE, 
@@ -28,8 +28,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     kb = [["➕ Нове оголошення"], ["💰 Змінити ціну", "🗑 Видалити"]]
     await update.message.reply_text(
-        f"👋 Вітаємо! Вас вітає головне меню бота **Auto Shop Odessa**.\n\n"
-        f"Я допоможу вам опублікувати ваше оголошення на канал {CHANNEL_ID}. Оберіть потрібну дію на панелі нижче:",
+        f"👋 Вітаємо! Вас вітає ваш помічник на каналі **Для воїх**.\n\n"
+        f"Я допоможу вам опублікувати ваше оголошення на канал  Оберіть потрібну дію на панелі нижче:",
+        f"Щоб перейти на канал натисніть сюди 👉🏼https://t.me/+HjaDCqwnESo2MGNi"
         reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
         parse_mode="Markdown"
     )
