@@ -30,7 +30,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"👋 Вітаємо! Вас вітає ваш помічник на каналі **Для воїх**.\n\n"
         f"Я допоможу вам опублікувати ваше оголошення на канал  Оберіть потрібну дію на панелі нижче:",
-        f"Щоб перейти на канал натисніть сюди 👉🏼https://t.me/+HjaDCqwnESo2MGNi"
+        f"Щоб перейти на канал натисніть сюди 👉🏼https://t.me/+HjaDCqwnESo2MGNi",
         reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
         parse_mode="Markdown"
     )
