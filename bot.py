@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO)
 TOKEN = "8076199435:AAGSWx8kZnZTno2R-_7bxiIcMwHksWGtiyI"
 CHANNEL_ID = -1003568390240
 
-# Состояния (добавлено MILEAGE)
+# Состояния
 (BRAND, MODEL, YEAR, MILEAGE, ENGINE, FUEL, GEARBOX, DESC, PRICE, 
  PHOTO, DISTRICT, CITY, TG_CONTACT, PHONE, CHOOSE_CAR, WAIT_NEW_PRICE) = range(16)
 
@@ -24,19 +24,20 @@ def init_db():
 
 init_db()
 
+# ------------------- START -------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     kb = [["➕ Нове оголошення"], ["💰 Змінити ціну", "🗑 Видалити"]]
     await update.message.reply_text(
-        f"👋 Вітаю! я ваш помічник на каналі **Для воїх**.\n\n",
-        f"Я допоможу вам опублікувати ваше оголошення на канал  Оберіть потрібну дію на панелі нижче:",
-        f"Щоб перейти на канал натисніть сюди 👉🏼https://t.me/+HjaDCqwnESo2MGNi",
+        "👋 Вітаю! я ваш помічник на каналі **Для воїх**.\n\n"
+        "Я допоможу вам опублікувати ваше оголошення на канал. Оберіть потрібну дію на панелі нижче.\n"
+        "Щоб перейти на канал натисніть сюди 👉🏼https://t.me/+HjaDCqwnESo2MGNi",
         reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
         parse_mode="Markdown"
     )
     return ConversationHandler.END
 
-# --- ЛОГИКА ВЫБОРА ---
+# ------------------- ВЫБОР АВТО -------------------
 async def show_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     mode = "edit" if "Змінити ціну" in update.message.text else "del"
@@ -96,7 +97,7 @@ async def update_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     return await start(update, context)
 
-# --- АНКЕТА ---
+# ------------------- АНКЕТА -------------------
 async def new_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("1. Марка авто:", reply_markup=ReplyKeyboardRemove()); return BRAND
 async def get_brand(update: Update, context: ContextTypes.DEFAULT_TYPE): context.user_data['brand'] = update.message.text; await update.message.reply_text("2. Модель:"); return MODEL
@@ -163,13 +164,22 @@ async def finish_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e: await update.message.reply_text(f"Помилка: {e}")
     return await start(update, context)
 
+# ------------------- Health check -------------------
 class Health(BaseHTTPRequestHandler):
     def do_GET(self): self.send_response(200); self.end_headers(); self.wfile.write(b"OK")
+
+# ------------------- MAIN -------------------
 async def main():
     threading.Thread(target=lambda: HTTPServer(('0.0.0.0', int(os.environ.get("PORT", 8080))), Health).serve_forever(), daemon=True).start()
+
     app = Application.builder().token(TOKEN).build()
+
     conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^➕ Нове оголошення$"), new_ad), MessageHandler(filters.Regex("^(💰 Змінити ціну|🗑 Видалити)$"), show_list)],
+        entry_points=[
+            CommandHandler("start", start),
+            MessageHandler(filters.Regex("^➕ Нове оголошення$"), new_ad),
+            MessageHandler(filters.Regex("^(💰 Змінити ціну|🗑 Видалити)$"), show_list)
+        ],
         states={
             BRAND: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_brand)],
             MODEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_model)],
@@ -188,11 +198,14 @@ async def main():
             CHOOSE_CAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_choice)],
             WAIT_NEW_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, update_price)]
         },
-        fallbacks=[CommandHandler("start", start)], allow_reentry=True
+        fallbacks=[CommandHandler("start", start)],
+        allow_reentry=True
     )
-    app.add_handler(conv); app.add_handler(CommandHandler("start", start))
-    await app.initialize(); await app.bot.delete_webhook(drop_pending_updates=True)
-    await app.start(); await app.updater.start_polling(); await asyncio.Event().wait()
+
+    app.add_handler(conv)
+
+    # Запуск polling
+    await app.run_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
